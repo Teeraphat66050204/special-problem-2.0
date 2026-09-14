@@ -157,6 +157,33 @@ def test_chunk_rejects_invalid_page_number(engine) -> None:
             session.commit()
 
 
+def test_chunk_rejects_negative_token_count(engine) -> None:
+    document = Document(
+        original_filename="project.pdf",
+        storage_key="documents/project.pdf",
+    )
+    document.chunks.append(Chunk(chunk_index=0, content="Text", token_count=-1))
+
+    with Session(engine) as session:
+        session.add(document)
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+@pytest.mark.parametrize("content", ["", "   "])
+def test_chunk_rejects_empty_content(engine, content: str) -> None:
+    document = Document(
+        original_filename="project.pdf",
+        storage_key="documents/project.pdf",
+    )
+    document.chunks.append(Chunk(chunk_index=0, content=content))
+
+    with Session(engine) as session:
+        session.add(document)
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
 def test_publication_status_and_flag_must_agree(engine) -> None:
     document = Document(
         original_filename="project.pdf",
@@ -287,3 +314,48 @@ def test_chunk_indexes_are_scoped_to_wiki_page(engine) -> None:
 
         assert first_chunk.id is not None
         assert second_chunk.id is not None
+
+
+def test_chunk_index_is_unique_within_wiki_page(engine) -> None:
+    document = Document(
+        original_filename="project.pdf",
+        storage_key="documents/project.pdf",
+    )
+    wiki_page = WikiPage(markdown_content="# Project")
+    wiki_page.chunks.extend(
+        [
+            Chunk(chunk_index=0, content="First"),
+            Chunk(chunk_index=0, content="Duplicate"),
+        ]
+    )
+    document.wiki_pages.append(wiki_page)
+
+    with Session(engine) as session:
+        session.add(document)
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+
+def test_deleting_document_deletes_related_wiki_pages_and_chunks(engine) -> None:
+    document = Document(
+        original_filename="project.pdf",
+        storage_key="documents/project.pdf",
+    )
+    wiki_page = WikiPage(markdown_content="# Project")
+    chunk = Chunk(chunk_index=0, content="Wiki content")
+    wiki_page.chunks.append(chunk)
+    document.wiki_pages.append(wiki_page)
+
+    with Session(engine) as session:
+        session.add(document)
+        session.commit()
+        document_id = document.id
+        wiki_page_id = wiki_page.id
+        chunk_id = chunk.id
+
+        session.delete(document)
+        session.commit()
+
+        assert session.get(Document, document_id) is None
+        assert session.get(WikiPage, wiki_page_id) is None
+        assert session.get(Chunk, chunk_id) is None
