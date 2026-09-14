@@ -127,6 +127,32 @@ def test_normalization_is_conservative() -> None:
     assert normalize_text(raw) == f"Caf\u00e9 {thai_text}\n\nnext\u200b line"
 
 
+def test_normalization_joins_wrapped_prose_and_preserves_paragraphs() -> None:
+    raw = (
+        "This deliberately long sentence resembles a wrapped line and\n"
+        "continues on the following line.\n\n"
+        "A separate paragraph remains separate."
+    )
+
+    assert normalize_text(raw) == (
+        "This deliberately long sentence resembles a wrapped line and "
+        "continues on the following line.\n\n"
+        "A separate paragraph remains separate."
+    )
+
+
+def test_normalization_joins_obvious_hyphenated_wrap() -> None:
+    raw = "This deliberately long sentence ends with a docu-\nment boundary."
+
+    assert normalize_text(raw) == ("This deliberately long sentence ends with a document boundary.")
+
+
+def test_normalization_preserves_short_structural_line_breaks() -> None:
+    assert normalize_text("Section title\nsubtitle\n\nParagraph") == (
+        "Section title\nsubtitle\n\nParagraph"
+    )
+
+
 def test_normalization_preserves_thai_zero_width_space() -> None:
     thai_with_word_boundary = "การพัฒนา\u200bระบบ"
 
@@ -140,3 +166,9 @@ def test_normalization_only_removes_bom_from_zero_width_formatting() -> None:
     meaningful_formatting = "A\u200bB\u200cC\u200dD\u2060E"
 
     assert normalize_text(f"\ufeff{meaningful_formatting}") == meaningful_formatting
+
+
+def test_normalization_preserves_nonleading_bom_code_point() -> None:
+    text = "First\ufeffsecond"
+
+    assert normalize_text(text) == text

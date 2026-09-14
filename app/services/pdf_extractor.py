@@ -21,10 +21,10 @@ PdfInput: TypeAlias = str | os.PathLike[str] | BinaryIO
 
 _HORIZONTAL_WHITESPACE = re.compile(r"[ \t]+")
 _EXCESSIVE_BLANK_LINES = re.compile(r"\n{3,}")
-# U+FEFF is stripped as a byte-order-mark artifact. Meaningful formatting such
-# as U+200B ZERO WIDTH SPACE, U+200C/U+200D joiners, and U+2060 WORD JOINER is
-# preserved.
-_REMOVABLE_INVISIBLE_FORMATTING = str.maketrans("", "", "\ufeff")
+_HYPHENATED_LATIN_LINE = re.compile(r"[A-Za-z]-$")
+_LIST_ITEM = re.compile(r"^(?:[-*\u2022]|\d+[.)])\s")
+_MIN_WRAPPED_LINE_LENGTH = 40
+_TERMINAL_PUNCTUATION = frozenset(".!?\u2026:;")
 
 
 class PdfExtractionError(Exception):
@@ -89,14 +89,55 @@ def normalize_text(text: str) -> str:
     because removing them can change the meaning of some writing systems.
     """
 
-    normalized = unicodedata.normalize("NFC", text)
+    normalized = unicodedata.normalize("NFC", text).lstrip("\ufeff")
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = normalized.translate(_REMOVABLE_INVISIBLE_FORMATTING)
     normalized = "\n".join(
         _HORIZONTAL_WHITESPACE.sub(" ", line).strip() for line in normalized.split("\n")
     )
     normalized = _EXCESSIVE_BLANK_LINES.sub("\n\n", normalized)
-    return normalized.strip()
+    return _join_wrapped_lines(normalized).strip()
+
+
+def _join_wrapped_lines(text: str) -> str:
+    """Join only line breaks that strongly resemble prose wrapping."""
+
+    paragraphs: list[str] = []
+    for paragraph in text.split("\n\n"):
+        lines = paragraph.splitlines()
+        if not lines:
+            continue
+
+        joined_lines = [lines[0]]
+        for following in lines[1:]:
+            current = joined_lines[-1]
+            if _is_hyphenated_wrap(current, following):
+                joined_lines[-1] = current[:-1] + following
+            elif _is_prose_wrap(current, following):
+                joined_lines[-1] = f"{current} {following}"
+            else:
+                joined_lines.append(following)
+        paragraphs.append("\n".join(joined_lines))
+
+    return "\n\n".join(paragraphs)
+
+
+def _is_hyphenated_wrap(current: str, following: str) -> bool:
+    return (
+        len(current) >= _MIN_WRAPPED_LINE_LENGTH
+        and bool(_HYPHENATED_LATIN_LINE.search(current))
+        and bool(following)
+        and following[0].islower()
+    )
+
+
+def _is_prose_wrap(current: str, following: str) -> bool:
+    return (
+        len(current) >= _MIN_WRAPPED_LINE_LENGTH
+        and bool(following)
+        and current[-1] not in _TERMINAL_PUNCTUATION
+        and not _LIST_ITEM.match(following)
+        and following[0].islower()
+    )
 
 
 def extract_pdf(source: PdfInput) -> PdfExtractionResult:
