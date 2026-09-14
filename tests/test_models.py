@@ -27,7 +27,8 @@ def engine():
         cursor.close()
 
     SQLModel.metadata.create_all(database)
-    return database
+    yield database
+    database.dispose()
 
 
 def test_document_wiki_and_chunk_relationships(engine) -> None:
@@ -68,6 +69,46 @@ def test_document_wiki_and_chunk_relationships(engine) -> None:
         assert stored.chunks[0].document_id == stored.id
         assert stored.chunks[0].wiki_page_id == stored.wiki_pages[0].id
         assert stored.chunks[0].source_page == 1
+
+
+def test_wiki_relationship_populates_chunk_document_provenance(engine) -> None:
+    document = Document(
+        original_filename="project.pdf",
+        storage_key="documents/project.pdf",
+    )
+    wiki_page = WikiPage(markdown_content="# Project")
+    chunk = Chunk(chunk_index=0, content="Wiki content")
+    document.wiki_pages.append(wiki_page)
+    wiki_page.chunks.append(chunk)
+
+    with Session(engine) as session:
+        session.add(document)
+        session.commit()
+
+        assert chunk.wiki_page_id == wiki_page.id
+        assert chunk.document_id == document.id
+        assert chunk in document.chunks
+
+
+def test_deleting_wiki_page_deletes_its_chunks(engine) -> None:
+    document = Document(
+        original_filename="project.pdf",
+        storage_key="documents/project.pdf",
+    )
+    wiki_page = WikiPage(markdown_content="# Project")
+    chunk = Chunk(chunk_index=0, content="Wiki content")
+    document.wiki_pages.append(wiki_page)
+    wiki_page.chunks.append(chunk)
+
+    with Session(engine) as session:
+        session.add(document)
+        session.commit()
+        chunk_id = chunk.id
+
+        session.delete(wiki_page)
+        session.commit()
+
+        assert session.get(Chunk, chunk_id) is None
 
 
 def test_default_model_lifecycle_values() -> None:

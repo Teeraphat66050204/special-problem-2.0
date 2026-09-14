@@ -101,7 +101,10 @@ class Document(SQLModel, table=True):
     )
     chunks: list["Chunk"] = Relationship(
         back_populates="document",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "overlaps": "chunks,wiki_page",
+        },
     )
 
 
@@ -151,7 +154,11 @@ class WikiPage(SQLModel, table=True):
     document: Document = Relationship(back_populates="wiki_pages")
     chunks: list["Chunk"] = Relationship(
         back_populates="wiki_page",
-        sa_relationship_kwargs={"foreign_keys": "Chunk.wiki_page_id"},
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            "foreign_keys": "[Chunk.wiki_page_id, Chunk.document_id]",
+            "overlaps": "chunks,document",
+        },
     )
 
 
@@ -213,8 +220,14 @@ class Chunk(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
 
-    document: Document = Relationship(back_populates="chunks")
+    document: Document = Relationship(
+        back_populates="chunks",
+        sa_relationship_kwargs={"overlaps": "chunks,wiki_page"},
+    )
     wiki_page: WikiPage | None = Relationship(
         back_populates="chunks",
-        sa_relationship_kwargs={"foreign_keys": "Chunk.wiki_page_id"},
+        sa_relationship_kwargs={
+            "foreign_keys": "[Chunk.wiki_page_id, Chunk.document_id]",
+            "overlaps": "chunks,document",
+        },
     )
