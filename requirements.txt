@@ -1,0 +1,6 @@
+fastapi[standard]
+sqlmodel
+psycopg2-binary
+pgvector
+python-multipart
+PyMuPDF
